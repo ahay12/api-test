@@ -25,7 +25,7 @@ func Make() *fiber.App {
 		v1.Get("/project", service.GetProjects)
 		v1.Get("/project/:id", service.GetProject)
 		v1.Post("/signup", service.CreateUser)
-		v1.Post("/login", service.Login)
+		v1.Post("/signin", service.Login)
 	}
 	// Admin routes
 	{

@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = os.Getenv("API_KEY")
+var jwtSecret = os.Getenv("JWT_SECRET")
 
 // AdminMiddleware checks if the user has an admin role
 func AdminMiddleware(ctx *fiber.Ctx) error {

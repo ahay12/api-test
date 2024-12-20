@@ -2,22 +2,61 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"github.com/ahay12/api-test/database"
 	"github.com/ahay12/api-test/helper"
 	"github.com/ahay12/api-test/model"
 	"github.com/gofiber/fiber/v2"
 	"log"
+	"strconv"
+	"time"
 )
 
 func GetProjects(ctx *fiber.Ctx) error {
-	var articles []model.Project
+	page, _ := strconv.Atoi(ctx.Query("page", "1"))
+	limit, _ := strconv.Atoi(ctx.Query("limit", "10"))
+	sort := ctx.Query("sort", "id desc")
+	order := ctx.Query("order", "asc")
+	filterName := ctx.Query("title", "")
+
+	offset := (page - 1) * limit
+
+	var project []model.Project
 	DB := database.DB
-	if err := DB.Find(&articles).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch articles", nil, err.Error())
+	if err := DB.Find(&project).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch Project", nil, err.Error())
 		return err
 	}
 
-	helper.RespondJSON(ctx, fiber.StatusOK, "Articles fetched successfully", articles, nil)
+	if order != "asc" && order != "desc" {
+		order = "desc"
+	}
+
+	if filterName != "" {
+		DB = DB.Where("title LIKE ?", filterName)
+	}
+
+	DB = DB.Order(fmt.Sprintf("%s %s", sort, order))
+
+	if err := DB.Limit(limit).Offset(offset).Find(&project).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch Project", nil, err.Error())
+		return err
+	}
+
+	var total int64
+	DB.Model(&model.Project{}).Count(&total)
+
+	projectsData := fiber.Map{
+		"data": project,
+		"meta": fiber.Map{
+			"page":       page,
+			"limit":      limit,
+			"total":      total,
+			"totalPages": (total + int64(limit) - 1) / int64(limit),
+		},
+	}
+
+	helper.RespondJSON(ctx, fiber.StatusOK, "Project fetched successfully", projectsData, nil)
 	return nil
 }
 
@@ -28,9 +67,9 @@ func GetProject(ctx *fiber.Ctx) error {
 	// Start a database transaction to ensure atomicity
 	tx := database.DB.Begin()
 
-	// Fetch the article including its associated likes
-	if err := database.DB.Preload("Likes").First(&project, id).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusNotFound, "Article not found", nil, err.Error())
+	// Fetch the project including its associated likes
+	if err := database.DB.First(&project, id).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusNotFound, "Project not found", nil, err.Error())
 		return err
 	}
 
@@ -47,7 +86,7 @@ func GetProject(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	articleData := fiber.Map{
+	projectData := fiber.Map{
 		"ID":        project.ID,
 		"CreatedAt": project.CreatedAt,
 		"UpdatedAt": project.UpdatedAt,
@@ -58,48 +97,63 @@ func GetProject(ctx *fiber.Ctx) error {
 		"Fund":      project.Fund,
 		"tag":       project.Tag,
 		"view":      project.View,
+		"expired":   project.Expired,
 	}
 
-	// Respond with the article data and like count
-	helper.RespondJSON(ctx, fiber.StatusOK, "Success get article", fiber.Map{
-		"article": articleData,
+	// Respond with the project data and like count
+	helper.RespondJSON(ctx, fiber.StatusOK, "Success get Project", fiber.Map{
+		"project": projectData,
 	}, nil)
 
 	return nil
 }
 
 func CreateProject(ctx *fiber.Ctx) error {
-	article := new(model.Project)
-	if err := ctx.BodyParser(article); err != nil {
+	project := new(model.Project)
+
+	if err := ctx.BodyParser(project); err != nil {
 		helper.RespondJSON(ctx, fiber.StatusBadRequest, "Cannot parse JSON", nil, err.Error())
 		return err
 	}
 
-	if err := database.DB.Create(&article).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to create article", nil, err.Error())
+	if project.Expired.IsZero() {
+		if dateString := ctx.FormValue("expired"); dateString != "" {
+			layout := "02-01-2006"
+			parsedDate, err := time.Parse(layout, dateString)
+			if err != nil {
+				helper.RespondJSON(ctx, fiber.StatusBadRequest, "Invalid date format. Use dd-MM-yyyy", nil, err.Error())
+				return err
+			}
+			project.Expired = parsedDate
+		}
+	}
+
+	if err := database.DB.Create(&project).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to create Project", nil, err.Error())
 		return err
 	}
-	helper.RespondJSON(ctx, fiber.StatusOK, "Successfully create article", article, nil)
+
+	helper.RespondJSON(ctx, fiber.StatusOK, "Successfully created Project", project, nil)
 	return nil
 }
 
 func UpdateProject(ctx *fiber.Ctx) error {
 	id := ctx.Params("id")
-	var article model.Project
-	if err := database.DB.First(&article, id).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusNotFound, "Article not found", nil, err.Error())
+	var project model.Project
+	if err := database.DB.First(&project, id).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusNotFound, "Project not found", nil, err.Error())
 		return err
 	}
 
-	if err := ctx.BodyParser(&article); err != nil {
+	if err := ctx.BodyParser(&project); err != nil {
 		helper.RespondJSON(ctx, fiber.StatusBadRequest, "Cannot parse JSON", nil, err.Error())
 		return err
 	}
-	if err := database.DB.Save(&article).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to update article", nil, err.Error())
+	if err := database.DB.Save(&project).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to update Project", nil, err.Error())
 		return err
 	}
-	helper.RespondJSON(ctx, fiber.StatusOK, "Successfully update article", article, nil)
+	helper.RespondJSON(ctx, fiber.StatusOK, "Successfully update Project", project, nil)
 	return nil
 }
 
@@ -108,23 +162,23 @@ func DeleteProject(ctx *fiber.Ctx) error {
 		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Database connection not established", nil, nil)
 		return errors.New("database connection not established")
 	}
-	log.Println("DeleteArticle function called")
+	log.Println("Delete Project function called")
 	id := ctx.Params("id")
-	log.Println("Delete request received for article ID:", id) // Tambahkan logging
+	log.Println("Delete request received for project ID:", id) // Tambahkan logging
 
-	var article model.Project
-	if err := database.DB.First(&article, id).Error; err != nil {
-		log.Println("Article not found:", err)
-		helper.RespondJSON(ctx, fiber.StatusBadRequest, "Article not found", nil, err.Error())
+	var project model.Project
+	if err := database.DB.First(&project, id).Error; err != nil {
+		log.Println("Project not found:", err)
+		helper.RespondJSON(ctx, fiber.StatusBadRequest, "Project not found", nil, err.Error())
 		return err
 	}
 
-	if err := database.DB.Delete(&article).Error; err != nil {
-		log.Println("Failed to delete article:", err)
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to delete article", nil, err.Error())
+	if err := database.DB.Delete(&project).Error; err != nil {
+		log.Println("Failed to delete project:", err)
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to delete Project", nil, err.Error())
 		return err
 	}
-	log.Println("Article deleted successfully")
-	helper.RespondJSON(ctx, fiber.StatusOK, "Article deleted successfully", nil, nil)
+	log.Println("Project deleted successfully")
+	helper.RespondJSON(ctx, fiber.StatusOK, "Project deleted successfully", nil, nil)
 	return nil
 }

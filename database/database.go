@@ -13,7 +13,7 @@ var DB *gorm.DB
 var err error
 
 func InitDatabase() *gorm.DB {
-	dsn := "root:ahay@tcp(localhost:3306)/api_test_u?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := "root:ahay@tcp(localhost:3306)/api_test?charset=utf8mb4&parseTime=True&loc=Local"
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 
 	if err != nil {
