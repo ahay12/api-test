@@ -15,39 +15,42 @@ import (
 func GetProjects(ctx *fiber.Ctx) error {
 	page, _ := strconv.Atoi(ctx.Query("page", "1"))
 	limit, _ := strconv.Atoi(ctx.Query("limit", "10"))
-	sort := ctx.Query("sort", "id desc")
+	sort := ctx.Query("sort", "id")
 	order := ctx.Query("order", "asc")
 	filterName := ctx.Query("title", "")
-
-	offset := (page - 1) * limit
-
-	var project []model.Project
-	DB := database.DB
-	if err := DB.Find(&project).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch Project", nil, err.Error())
-		return err
-	}
 
 	if order != "asc" && order != "desc" {
 		order = "desc"
 	}
 
-	if filterName != "" {
-		DB = DB.Where("title LIKE ?", filterName)
+	validColumns := map[string]bool{"id": true, "title": true, "goals": true, "fund": true}
+	if !validColumns[sort] {
+		sort = "id"
 	}
 
-	DB = DB.Order(fmt.Sprintf("%s %s", sort, order))
+	offset := (page - 1) * limit
+	var projects []model.Project
+	DB := database.DB
 
-	if err := DB.Limit(limit).Offset(offset).Find(&project).Error; err != nil {
-		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch Project", nil, err.Error())
+	// Build query with filter
+	query := DB.Model(&model.Project{})
+	if filterName != "" {
+		query = query.Where("title LIKE ?", "%"+filterName+"%")
+	}
+
+	// Count total projects
+	var total int64
+	query.Count(&total)
+
+	// Apply sorting, pagination, and fetch projects
+	if err := query.Order(fmt.Sprintf("%s %s", sort, order)).Limit(limit).Offset(offset).Find(&projects).Error; err != nil {
+		helper.RespondJSON(ctx, fiber.StatusInternalServerError, "Failed to fetch Projects", nil, err.Error())
 		return err
 	}
 
-	var total int64
-	DB.Model(&model.Project{}).Count(&total)
-
+	// Prepare response
 	projectsData := fiber.Map{
-		"data": project,
+		"data": projects,
 		"meta": fiber.Map{
 			"page":       page,
 			"limit":      limit,
@@ -56,7 +59,7 @@ func GetProjects(ctx *fiber.Ctx) error {
 		},
 	}
 
-	helper.RespondJSON(ctx, fiber.StatusOK, "Project fetched successfully", projectsData, nil)
+	helper.RespondJSON(ctx, fiber.StatusOK, "Projects fetched successfully", projectsData, nil)
 	return nil
 }
 
